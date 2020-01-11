@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(skeleton_markers)
 
+add_compile_options(-std=c++11)
+
 find_package(catkin REQUIRED COMPONENTS
 	roscpp
 	rospy
@@ -38,6 +40,9 @@ include_directories(${catkin_INCLUDE_DIRS}
                     ${OPENGL_INCLUDE_DIR}
 )
 
+include_directories(./include/)
+include_directories(./common/)
+
 add_message_files (
   FILES
   Skeleton.msg
@@ -48,8 +53,8 @@ generate_messages(
 )
 
 catkin_package(
-    DEPENDS 
-    CATKIN_DEPENDS 
+  DEPENDS 
+  CATKIN_DEPENDS 
 	rospy
 	roscpp
 	message_runtime
@@ -62,16 +67,28 @@ catkin_package(
 )
 
 add_executable(skeleton_tracker
-  src/skeleton_tracker.cpp
+  src/main.cpp
   src/KinectController.cpp
   src/KinectDisplay.cpp)
+
+#set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
+set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
 
 target_link_libraries(skeleton_tracker
   ${catkin_LIBRARIES}
   ${OpenNI_LIBRARIES}
   ${GLUT_LIBRARIES}
   ${OPENGL_LIBRARIES}  
-  ${orocos_kdl_LIBRARIES})
+  ${orocos_kdl_LIBRARIES}
+  ${ASTRA_SDK_LIB}/libastra.so 
+  ${ASTRA_SDK_LIB}/libastra_core.so
+  ${ASTRA_SDK_LIB}/libastra_core_api.so
+  sfml-graphics
+  sfml-system
+  sfml-window
+  pthread
+  dl
+)
 
 #install(TARGETS skeleton_tracker RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})
 

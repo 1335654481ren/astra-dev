@@ -39,10 +39,10 @@ namespace skeleton_tracker
       
       void init()
       {
-        ros::NodeHandle n;
-	    int rate;
-	    n.param("tracking_rate", rate, 1);
-	    n.param("fixed_frame", fixed_frame, std::string("openni_depth_frame"));
+         ros::NodeHandle n;
+	       int rate;
+	       n.param("tracking_rate", rate, 1);
+	       n.param("fixed_frame", fixed_frame, std::string("openni_depth_frame"));
         skeleton_pub_ = n.advertise<skeleton_markers::Skeleton>("/skeleton", rate);
       }
       

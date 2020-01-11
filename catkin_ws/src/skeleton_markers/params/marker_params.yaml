@@ -22,17 +22,45 @@ color: { 'r': 0.0, 'g': 1.0, 'b': 0.0, 'a': 1.0 }
 skeleton_frames: [
 head,
 neck,
-torso,
+shoulderSpine,
+midSpine,
+baseSpine,
 left_shoulder,
 left_elbow,
 left_hand,
 left_hip,
+left_Wrist,
 left_knee,
 left_foot,
 right_shoulder,
 right_elbow,
 right_hand,
 right_hip,
+right_Wrist,
 right_knee,
 right_foot
 ]
+
+# enum class JointType : ::astra_joint_type_t
+# {
+#     Head            = 0, /*!< Head */
+#     Neck            = 18, /*!< Neck */
+#     ShoulderSpine   = 1, /*!< Shoulder spine */
+#     MidSpine        = 8, /*!< Mid spine */
+#     BaseSpine       = 9, /*!< Base spine */
+#     LeftShoulder    = 2, /*!< Left Shoulder */
+#     LeftElbow       = 3, /*!< Left Elbow */
+#     LeftHand        = 4, /*!< Left hand */
+#     LeftWrist       = 16, /*!< Left Wrist */
+#     LeftHip         = 10, /*!< Left Hip */
+#     LeftKnee        = 11, /*!< Left Knee */
+#     LeftFoot        = 12, /*!< Left Foot */
+#     RightShoulder   = 5, /*!< Right Shoulder */
+#     RightElbow      = 6, /*!< Right Elbow */
+#     RightHand       = 7, /*!< Right Hand */
+#     RightWrist      = 17, /*!< Right Wrist */
+#     RightHip        = 13, /*!< Right Hip */
+#     RightKnee       = 14, /*!< Right Knee */
+#     RightFoot       = 15, /*!< Right Foot */
+#     Unknown         = 255, /*!< Unknown */
+# };
