@@ -2,5 +2,9 @@ Header header
 int32 user_id
 string[] name
 float32[] confidence
+geometry_msgs/Pose2D[] handpose
+geometry_msgs/Vector3[] bodycenter
 geometry_msgs/Vector3[] position
+geometry_msgs/Vector3[] rpy
+geometry_msgs/Pose2D[]  image_2d
 geometry_msgs/Quaternion[] orientation

@@ -26,11 +26,7 @@
 #include <skeleton_markers/Skeleton.h>
 #include <tf/transform_broadcaster.h>
 #include <kdl/frames.hpp>
-#include <GL/glut.h>
 #include <string>
-#include "KinectController.h"
-#include "KinectDisplay.h"
-
 
 using std::string;
 
@@ -92,22 +88,37 @@ namespace skeleton_tracker
         double qx, qy, qz, qw;
         rotation.GetQuaternion(qx, qy, qz, qw);
 
-            geometry_msgs::Vector3 position;
-            geometry_msgs::Quaternion orientation;
+        geometry_msgs::Vector3 position;
+        geometry_msgs::Vector3 rpy;
+        geometry_msgs::Pose2D  image_2d;
+        geometry_msgs::Quaternion orientation;
 
-            position.x = x;
-            position.y = y;
-            position.z = z;
+        position.x = x;
+        position.y = y;
+        position.z = z;
 
-            orientation.x = qx;
-            orientation.y = qy;
-            orientation.z = qz;
-            orientation.w = qw;
+        image_2d.x = depthPos->x;
+        image_2d.y = depthPos->y;
 
-            skeleton.name.push_back(child_frame_id);
-            skeleton.position.push_back(position);
-            skeleton.orientation.push_back(orientation);
-            skeleton.confidence.push_back(jointStatus*0.5);
+        orientation.x = qx;
+        orientation.y = qy;
+        orientation.z = qz;
+        orientation.w = qw;
+
+
+        tf::Quaternion quat;
+        tf::quaternionMsgToTF(orientation, quat);
+        double roll, pitch, yaw;//定义存储r\p\y的容器
+        tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);//进行转换
+        rpy.x = roll; rpy.y = pitch; rpy.z = yaw;
+        ROS_INFO("RPY = %f , %f , %f \n", roll, pitch,yaw);
+
+        skeleton.name.push_back(child_frame_id);
+        skeleton.position.push_back(position);
+        skeleton.orientation.push_back(orientation);
+        skeleton.confidence.push_back(jointStatus*0.5);
+        skeleton.rpy.push_back(rpy);
+        skeleton.image_2d.push_back(image_2d);
 
         tf::Transform transform;
         transform.setOrigin(tf::Vector3(x, y, z));
@@ -208,8 +219,6 @@ namespace skeleton_tracker
                 publishTransform(joint, fixed_frame, "left_knee", g_skel);
                 joint = &body->joints[ASTRA_JOINT_LEFT_FOOT];
                 publishTransform(joint, fixed_frame, "left_foot", g_skel);
-
-
 
                 g_skel.user_id = bodyId;
                 g_skel.header.stamp = ros::Time::now();
@@ -334,14 +343,34 @@ void output_joint(const int32_t bodyId, const astra_joint_t* joint)
 
     // orientation is a 3x3 rotation matrix where the column vectors also
     // represent the orthogonal basis vectors for the x, y, and z axes.
-    const astra_matrix3x3_t* orientation = &joint->orientation;
-    const astra_vector3f_t* xAxis = &orientation->xAxis; // same as orientation->m00, m10, m20
-    const astra_vector3f_t* yAxis = &orientation->yAxis; // same as orientation->m01, m11, m21
-    const astra_vector3f_t* zAxis = &orientation->zAxis; // same as orientation->m02, m12, m22
+    const astra_matrix3x3_t* gorientation = &joint->orientation;
+    const astra_vector3f_t* xAxis = &gorientation->xAxis; // same as orientation->m00, m10, m20
+    const astra_vector3f_t* yAxis = &gorientation->yAxis; // same as orientation->m01, m11, m21
+    const astra_vector3f_t* zAxis = &gorientation->zAxis; // same as orientation->m02, m12, m22
 
-    printf("Head orientation x: [%f %f %f]\n", xAxis->x, xAxis->y, xAxis->z);
-    printf("Head orientation y: [%f %f %f]\n", yAxis->x, yAxis->y, yAxis->z);
-    printf("Head orientation z: [%f %f %f]\n", zAxis->x, zAxis->y, zAxis->z);
+    //printf("Head orientation x: [%f %f %f]\n", xAxis->x, xAxis->y, xAxis->z);
+    //printf("Head orientation y: [%f %f %f]\n", yAxis->x, yAxis->y, yAxis->z);
+    //printf("Head orientation z: [%f %f %f]\n", zAxis->x, zAxis->y, zAxis->z);
+    KDL::Rotation rotation(xAxis->x, xAxis->y, xAxis->z,
+           yAxis->x, yAxis->y, yAxis->z,
+           zAxis->x, zAxis->y, zAxis->z);
+    double qx, qy, qz, qw;
+    rotation.GetQuaternion(qx, qy, qz, qw);
+
+    geometry_msgs::Vector3 position;
+    geometry_msgs::Quaternion orientation;
+
+    orientation.x = qx;
+    orientation.y = qy;
+    orientation.z = qz;
+    orientation.w = qw;
+
+    tf::Quaternion quat;
+    tf::quaternionMsgToTF(orientation, quat);
+    double roll, pitch, yaw;//定义存储r\p\y的容器
+    tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);//进行转换
+
+    ROS_INFO("RPY = %f , %f , %f \n", roll, pitch,yaw);
 }
 
 void output_hand_poses(const astra_body_t* body)
@@ -427,11 +456,7 @@ void output_bodies(astra_bodyframe_t bodyFrame)
     }
 }
 
-#define GL_WIN_SIZE_X 720
-#define GL_WIN_SIZE_Y 480
-KinectController g_kinect_controller;
 skeleton_tracker::SkeletonTracker *g_skeleton_tracker;
-astra_reader_t reader;
 
 void output_bodyframe(astra_bodyframe_t bodyFrame)
 {
@@ -442,68 +467,6 @@ void output_bodyframe(astra_bodyframe_t bodyFrame)
     output_bodyframe_info(bodyFrame);
 
     output_bodies(bodyFrame);
-}
-
-
-void glutIdle (void)
-{
-    glutPostRedisplay();
-}
-
-void glutDisplay (void)
-{
-
-        // g_kinect_controller.getContext().WaitAndUpdateAll();
-    astra_update();
-
-    astra_reader_frame_t frame;
-    astra_status_t rc = astra_reader_open_frame(reader, 0, &frame);
-
-    if (rc == ASTRA_STATUS_SUCCESS)
-    {
-
-        astra_bodyframe_t bodyFrame;
-        astra_frame_get_bodyframe(frame, &bodyFrame);
-        astra_frame_index_t frameIndex;
-        astra_bodyframe_get_frameindex(bodyFrame, &frameIndex);
-        printf("Frame index: %d\n", frameIndex);
-
-        xn::SceneMetaData sceneMD;
-        xn::DepthMetaData depthMD;
-
-        glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // Setup the OpenGL viewpoint
-        glMatrixMode(GL_PROJECTION);
-        glPushMatrix();
-        glLoadIdentity();
-
-        glOrtho(0, 640, 480, 0, -1.0, 1.0);
-
-        glDisable(GL_TEXTURE_2D);
-
-        output_bodyframe(bodyFrame);
-        g_skeleton_tracker->processKinect(bodyFrame);
-
-    //    kinect_display_drawDepthMapGL(depthMD, sceneMD);
-    //    kinect_display_drawSkeletonGL(g_kinect_controller.getUserGenerator(),g_kinect_controller.getDepthGenerator());
-
-        printf("----------------------------\n");
-
-        astra_reader_close_frame(&frame);
-    }
-
-    glutSwapBuffers();
-}
-
-void glutKeyboard (unsigned char key, int x, int y)
-{
-    switch (key)
-    {
-    case 27:
-    exit(1);
-    break;
-    }
 }
 
 int main(int argc, char* argv[])
@@ -518,40 +481,54 @@ int main(int argc, char* argv[])
     np.getParam("load_filepath", filepath); 
     np.param<bool>("load_recording", is_a_recording, false);      
 
-    //  g_skeleton_tracker.init();
-    //  g_kinect_controller.init(filepath.c_str(), is_a_recording);
+
     set_key_handler();
+
     astra_initialize();
+
     const char* licenseString = "<INSERT LICENSE KEY HERE>";
     orbbec_body_tracking_set_license(licenseString);
+
     astra_streamsetconnection_t sensor;
 
     astra_streamset_open("device/default", &sensor);
 
+    astra_reader_t reader;
     astra_reader_create(sensor, &reader);
+
     astra_bodystream_t bodyStream;
     astra_reader_get_bodystream(reader, &bodyStream);
+
     astra_stream_start(bodyStream);
-    
 
-    glutInit(&argc, argv);
-    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
-    glutInitWindowSize(GL_WIN_SIZE_X, GL_WIN_SIZE_Y);
-    glutCreateWindow ("NITE Skeleton Tracker");
+    do
+    {
+        astra_update();
 
-    glutKeyboardFunc(glutKeyboard);
-    glutDisplayFunc(glutDisplay);
-    glutIdleFunc(glutIdle);
+        astra_reader_frame_t frame;
+        astra_status_t rc = astra_reader_open_frame(reader, 0, &frame);
 
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_TEXTURE_2D);
+        if (rc == ASTRA_STATUS_SUCCESS)
+        {
+            astra_bodyframe_t bodyFrame;
+            astra_frame_get_bodyframe(frame, &bodyFrame);
 
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glDisableClientState(GL_COLOR_ARRAY);  
+            astra_frame_index_t frameIndex;
+            astra_bodyframe_get_frameindex(bodyFrame, &frameIndex);
+            printf("Frame index: %d\n", frameIndex);
 
-    glutMainLoop();
-  
+            output_bodyframe(bodyFrame);
+            g_skeleton_tracker->processKinect(bodyFrame);
+
+            printf("----------------------------\n");
+
+            astra_reader_close_frame(&frame);
+        }
+
+    } while (ros::ok());
+
     astra_reader_destroy(&reader);
     astra_streamset_close(&sensor);
+
     astra_terminate();
 }

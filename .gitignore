@@ -2,4 +2,6 @@ ai_project/build/
 ai_project/CMakeLists.txt
 catkin_ws/build/
 catkin_ws/devel/
+catkin_ws/src/skeleton_follow/CMakeLists.txt
+catkin_ws/src/skeleton_markers/CMakeLists.txt
 
