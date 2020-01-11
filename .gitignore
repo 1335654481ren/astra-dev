@@ -1,4 +1,5 @@
 ai_project/build/
+ai_project/CMakeLists.txt
 catkin_ws/build/
 catkin_ws/devel/
 

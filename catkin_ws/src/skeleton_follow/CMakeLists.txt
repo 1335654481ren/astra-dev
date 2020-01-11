@@ -26,9 +26,9 @@ include_directories(./common/)
 
 LINK_DIRECTORIES(./lib)
 
-#set(ASTRA_SDK_LIB "set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
+set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
 
-set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
+#set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
 
 target_link_libraries(skeleton_follow
 	dl

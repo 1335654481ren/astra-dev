@@ -13,8 +13,8 @@ include_directories(./include/)
 #string(REPLACE "build" "lib" WORK_DIR ${DIR})
 
 message("${WORK_DIR}")
-#set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/ai_project/lib")
-set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/ai_project/lib")
+set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/ai_project/lib")
+#set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/ai_project/lib")
 
 target_link_libraries(app
 	dl
