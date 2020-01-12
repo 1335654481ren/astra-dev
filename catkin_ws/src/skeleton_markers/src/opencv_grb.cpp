@@ -28,72 +28,24 @@
 #include <kdl/frames.hpp>
 #include <string>
 
+#include <cv_bridge/cv_bridge.h>
+#include <image_transport/image_transport.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/opencv.hpp>
 #include <sensor_msgs/image_encodings.h>
 
-#include <string.h>
-#ifdef __cplusplus
-extern "C" {               // 告诉编译器下列代码要以C链接约定的模式进行链接
-#endif
-#include <xdo.h>
-
-#ifdef __cplusplus
-}
-#endif
-
+using namespace cv;
 using namespace std;
 
-int mouse_keyboard()
-{
-    Window *list = NULL;
-    xdo_t *my_xdo = xdo_new(NULL);
-    xdo_search_t search;
-    unsigned int nwindows;
-    unsigned int i;
-
-    memset(&search, 0, sizeof(xdo_search_t));
-
-    /* setup search */
-    search.require = 0;//SEARCH_ANY;
-    search.max_depth = -1;
-    search.searchmask |= (SEARCH_CLASSNAME | SEARCH_ONLYVISIBLE);
-    search.only_visible = True;
-    char *winname = "gedit";
-    search.winclassname= winname;
-
-    /* do search */
-    xdo_search_windows(my_xdo,&search,&list,&nwindows);
-
-    /* print results */
-    printf("number of windows: %d\n", nwindows);
-    unsigned char * name;
-    int size;
-    int type;
-    for(int i=0; i<nwindows; i++ ){
-        xdo_get_window_name(my_xdo,list[i],&name,&size,&type);
-        printf("%d: %s\n",i, name);
-    }
-
-    /* Send keypresses to first gedit in list */
-
-
-    for(int i=0; i<1000; i++) {
-        xdo_activate_window(my_xdo, list[0]);
-        //xdo_move_mouse(my_xdo, i, i, screen);
-        xdo_move_mouse_relative(my_xdo, i, i);
-        sleep(1);
-        // xdo_enter_text_window(my_xdo,CURRENTWINDOW,"HELLO",1000);
-        // sleep(1);
-        // xdo_enter_text_window(my_xdo,CURRENTWINDOW,"WORLD",1000);
-        // sleep(1);
-        // xdo_send_keysequence_window(my_xdo,CURRENTWINDOW,"ctrl+a",1000);
-        // sleep(1);
-        // xdo_send_keysequence_window(my_xdo,CURRENTWINDOW,"Delete",1000);
-        // sleep(3);
-    }
-    return 0;
-}
+#ifndef PI
+#define PI 3.14159265359
+#endif
+#ifndef HALFPI
+#define HALFPI 1.57079632679
+#endif
+#ifndef QUARTPI
+#define QUARTPI 0.785398163397
+#endif
 
 namespace skeleton_tracker
 {
@@ -132,7 +84,7 @@ namespace skeleton_tracker
           int width = metadata.width;
           int height = metadata.height;
           size_t index = ((width * (height / 2)) + (width / 2));
-//          cv::Mat (height, width, CV_8UC3,cv::Scalar(0,0,0));
+          //cv::Mat image;//(height, width, CV_8UC3,Scalar(0,0,0));
           //astra_rgb_pixel_t middle = colorData_rgb[index];
           ROS_INFO("image: %d  : %d    : %d : %d\n", width, height, colorByteLength,sizeof(astra_rgb_pixel_t));
           //char *ptr = new char(colorByteLength);
@@ -157,9 +109,9 @@ namespace skeleton_tracker
         const astra_vector3f_t* worldPos = &joint->worldPosition;
         const astra_vector2f_t* depthPos = &joint->depthPosition;
 
-        double x = worldPos->x;// / 1000.0;
-        double y = worldPos->y;// / 1000.0;
-        double z = worldPos->z;// / 1000.0;
+        double x = worldPos->x / 1000.0;
+        double y = worldPos->y / 1000.0;
+        double z = worldPos->z / 1000.0;
 
         // orientation is a 3x3 rotation matrix where the column vectors also
         // represent the orthogonal basis vectors for the x, y, and z axes.
@@ -196,8 +148,7 @@ namespace skeleton_tracker
         double roll, pitch, yaw;//定义存储r\p\y的容器
         tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);//进行转换
         rpy.x = roll; rpy.y = pitch; rpy.z = yaw;
-        //if(child_frame_id == "head")
-        //    printf("%s : RPY = %f , %f , %f \n",child_frame_id.c_str(), roll, pitch,yaw);
+        ROS_INFO("RPY = %f , %f , %f \n", roll, pitch,yaw);
 
         skeleton.name.push_back(child_frame_id);
         skeleton.position.push_back(position);
@@ -211,6 +162,7 @@ namespace skeleton_tracker
         transform.setRotation(tf::Quaternion(qx, qy, qz, qw));
         br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), frame_id, child_frame_id));
       }
+
     void processKinect(astra_bodyframe_t bodyFrame)
       {
 
@@ -241,36 +193,27 @@ namespace skeleton_tracker
 
             if (bodyStatus == ASTRA_BODY_STATUS_TRACKING_STARTED)
             {
-                //printf("Body Id: %d Status: Tracking started\n", bodyId);
+                printf("Body Id: %d Status: Tracking started\n", bodyId);
             }
             if (bodyStatus == ASTRA_BODY_STATUS_TRACKING)
             {
-                //printf("Body Id: %d Status: Tracking\n", bodyId);
+                printf("Body Id: %d Status: Tracking\n", bodyId);
             }
 
             if (bodyStatus == ASTRA_BODY_STATUS_TRACKING_STARTED ||
                 bodyStatus == ASTRA_BODY_STATUS_TRACKING)
             {
                 const astra_vector3f_t* centerOfMass = &body->centerOfMass;
-                geometry_msgs::Vector3 bodycenter;
-                bodycenter.x = centerOfMass->x;
-                bodycenter.y = centerOfMass->y;
-                bodycenter.z = centerOfMass->z;
-                g_skel.bodycenter.push_back(bodycenter);
-                const astra_handpose_info_t* handPoses = &body->handPoses;
-                // astra_handpose_t is one of:
-                // ASTRA_HANDPOSE_UNKNOWN = 0
-                // ASTRA_HANDPOSE_GRIP = 1
-                const astra_handpose_t leftHandPose = handPoses->leftHand;
-                const astra_handpose_t rightHandPose = handPoses->rightHand;
-                g_skel.handpose.push_back(leftHandPose);
-                g_skel.handpose.push_back(rightHandPose);
-                //printf("Body %d Left hand pose: %d Right hand pose: %d\n",body->id,leftHandPose,rightHandPose);
+
                 const astra_body_tracking_feature_flags_t features = body->features;
                 const bool jointTrackingEnabled       = (features & ASTRA_BODY_TRACKING_JOINTS)     == ASTRA_BODY_TRACKING_JOINTS;
                 const bool handPoseRecognitionEnabled = (features & ASTRA_BODY_TRACKING_HAND_POSES) == ASTRA_BODY_TRACKING_HAND_POSES;
 
-                //printf("Body %d CenterOfMass (%f, %f, %f)\n",bodyId,centerOfMass->x, centerOfMass->y, centerOfMass->z);
+                printf("Body %d CenterOfMass (%f, %f, %f) Joint Tracking Enabled: %s Hand Pose Recognition Enabled: %s\n",
+                    bodyId,
+                    centerOfMass->x, centerOfMass->y, centerOfMass->z,
+                    jointTrackingEnabled       ? "True" : "False",
+                    handPoseRecognitionEnabled ? "True" : "False");
 
                 astra_joint_t* joint = NULL;
                 joint = &body->joints[ASTRA_JOINT_HEAD];
@@ -327,14 +270,13 @@ namespace skeleton_tracker
             {
                 printf("Body Id: %d Status: Not Tracking\n", bodyId);
             }
-            break;
         }
       }
          
   private:
     ros::NodeHandle n;
     ros::Publisher  skeleton_pub_;
-    //image_transport::Publisher pub_image;    
+    image_transport::Publisher pub_image;    
   };
 
 }
@@ -606,9 +548,9 @@ int main(int argc, char* argv[])
     astra_reader_get_bodystream(reader, &bodyStream);
     astra_stream_start(bodyStream);
     
-    //astra_depthstream_t colorStream;
-    //astra_reader_get_colorstream(reader, &colorStream);
-    //astra_stream_start(colorStream);
+    astra_depthstream_t colorStream;
+    astra_reader_get_colorstream(reader, &colorStream);
+    astra_stream_start(colorStream);
 
     do
     {
@@ -622,12 +564,18 @@ int main(int argc, char* argv[])
             astra_bodyframe_t bodyFrame;
             astra_frame_get_bodyframe(frame, &bodyFrame);
 
-            //output_bodyframe(bodyFrame);
+            astra_frame_index_t frameIndex;
+            astra_bodyframe_get_frameindex(bodyFrame, &frameIndex);
+            printf("Frame index: %d\n", frameIndex);
+
+            output_bodyframe(bodyFrame);
             g_skeleton_tracker->processKinect(bodyFrame);
             
-            //astra_colorframe_t colorFrame;
-            //astra_frame_get_colorframe(frame, &colorFrame);
-            //g_skeleton_tracker->process_colorframe(colorFrame);
+            astra_colorframe_t colorFrame;
+            astra_frame_get_colorframe(frame, &colorFrame);
+            g_skeleton_tracker->process_colorframe(colorFrame);
+
+            printf("----------------------------\n");
 
             astra_reader_close_frame(&frame);
         }
