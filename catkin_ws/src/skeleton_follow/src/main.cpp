@@ -27,6 +27,36 @@
 #include "LitDepthVisualizer.hpp"
 #include <key_handler.h>
 
+#include <astra/capi/astra.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <key_handler.h>
+
+#include <ros/ros.h>
+#include <std_msgs/String.h>
+#include <std_msgs/Header.h>
+#include <skeleton_follow/Skeleton.h>
+#include <tf/transform_broadcaster.h>
+#include <kdl/frames.hpp>
+#include <string>
+
+//#include <opencv2/highgui/highgui.hpp>
+//#include <opencv2/opencv.hpp>
+//#include <sensor_msgs/image_encodings.h>
+
+#include <string.h>
+#ifdef __cplusplus
+extern "C" {               // 告诉编译器下列代码要以C链接约定的模式进行链接
+#endif
+#include <xdo.h>
+#ifdef __cplusplus
+}
+#endif
+
+using namespace std;
+
+
 class sfLine : public sf::Drawable
 {
 public:
@@ -58,16 +88,258 @@ private:
     sf::Color color_;
 };
 
+class SkeletonTracker
+{
+public:
+  std::string fixed_frame;
+
+  SkeletonTracker()
+  {    
+  }
+  
+  void init(ros::NodeHandle nh)
+  {
+    n = nh;
+    int rate;
+    n.param("tracking_rate", rate, 1);
+    n.param("fixed_frame", fixed_frame, std::string("openni_depth_frame"));
+    skeleton_pub_ = n.advertise<skeleton_follow::Skeleton>("/skeleton", rate);
+    //image_transport负责订阅和发布
+    //image_transport::ImageTransport it(n);
+    //pub_image = it.advertise("/camera/rgb", 1);
+  }
+
+//   void process_colorframe(astra_colorframe_t colorFrame)
+//   {
+//       astra_image_metadata_t metadata;
+//       astra_rgb_pixel_t* colorData_rgb;
+//       uint8_t *data_ptr;
+//       uint32_t colorByteLength;
+
+// //          astra_colorframe_get_data_rgb_ptr(colorFrame, &colorData_rgb, &colorByteLength);
+//       astra_colorframe_get_data_ptr(colorFrame,&data_ptr,&colorByteLength);
+//       astra_colorframe_get_metadata(colorFrame, &metadata);
+
+//       int width = metadata.width;
+//       int height = metadata.height;
+//       size_t index = ((width * (height / 2)) + (width / 2));
+// //          cv::Mat (height, width, CV_8UC3,cv::Scalar(0,0,0));
+//       //astra_rgb_pixel_t middle = colorData_rgb[index];
+//       ROS_INFO("image: %d  : %d    : %d : %d\n", width, height, colorByteLength,sizeof(astra_rgb_pixel_t));
+//       //char *ptr = new char(colorByteLength);
+//       //astra_colorframe_copy_data(colorFrame,ptr);
+//       //memcpy(image.data,(char *)colorData_rgb,colorByteLength);
+//       //delete ptr;
+// //         pub_image.publish(cv_bridge::CvImage(std_msgs::Header(), "bgr8", image).toImageMsg());
+
+//       //cv::imshow("camera", image);
+//       //cv::waitKey(3); // opencv刷新图像 3ms
+//   }
+
+  void publishTransform(const astra::Joint& joint, string const &frame_id, string const &child_frame_id, skeleton_follow::Skeleton &skeleton)
+  {
+
+    static tf::TransformBroadcaster br;
+    // jointStatus is one of:
+    // ASTRA_JOINT_STATUS_NOT_TRACKED = 0,
+    // ASTRA_JOINT_STATUS_LOW_CONFIDENCE = 1,
+    // ASTRA_JOINT_STATUS_TRACKED = 2,
+    auto jointStatus = joint.status();
+    auto worldPos = joint.world_position();
+    auto depthPos = joint.depth_position();
+
+    double x = worldPos.x;// / 1000.0;
+    double y = worldPos.y;// / 1000.0;
+    double z = worldPos.z;// / 1000.0;
+
+    // orientation is a 3x3 rotation matrix where the column vectors also
+    // represent the orthogonal basis vectors for the x, y, and z axes.
+    const astra::Matrix3x3 joint_orientation = joint.orientation();
+    const astra::Vector3f xAxis = joint_orientation.x_axis(); // same as orientation->m00, m10, m20
+    const astra::Vector3f yAxis = joint_orientation.y_axis(); // same as orientation->m01, m11, m21
+    const astra::Vector3f zAxis = joint_orientation.z_axis(); // same as orientation->m02, m12, m22
+    KDL::Rotation rotation(xAxis.x, xAxis.y, xAxis.z,
+               yAxis.x, yAxis.y, yAxis.z,
+               zAxis.x, zAxis.y, zAxis.z);
+    double qx, qy, qz, qw;
+    rotation.GetQuaternion(qx, qy, qz, qw);
+
+    geometry_msgs::Vector3 position;
+    geometry_msgs::Vector3 rpy;
+    geometry_msgs::Pose2D  image_2d;
+    geometry_msgs::Quaternion orientation;
+
+    position.x = x;
+    position.y = y;
+    position.z = z;
+
+    image_2d.x = depthPos.x;
+    image_2d.y = depthPos.y;
+
+    orientation.x = qx;
+    orientation.y = qy;
+    orientation.z = qz;
+    orientation.w = qw;
+
+
+    tf::Quaternion quat;
+    tf::quaternionMsgToTF(orientation, quat);
+    double roll, pitch, yaw;//定义存储r\p\y的容器
+    tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);//进行转换
+    rpy.x = roll; rpy.y = pitch; rpy.z = yaw;
+    //if(child_frame_id == "head")
+    //    printf("%s : RPY = %f , %f , %f \n",child_frame_id.c_str(), roll, pitch,yaw);
+
+    skeleton.name.push_back(child_frame_id);
+    skeleton.position.push_back(position);
+    skeleton.orientation.push_back(orientation);
+    skeleton.confidence.push_back((double)jointStatus*0.5);
+    skeleton.rpy.push_back(rpy);
+    skeleton.image_2d.push_back(image_2d);
+
+    tf::Transform transform;
+    transform.setOrigin(tf::Vector3(x, y, z));
+    transform.setRotation(tf::Quaternion(qx, qy, qz, qw));
+    br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), frame_id, child_frame_id));
+  }
+  void ros_process_Body(astra::Frame& frame)
+  {
+
+    astra::BodyFrame bodyFrame = frame.get<astra::BodyFrame>();
+
+    skeleton_follow::Skeleton g_skel;
+
+    if (!bodyFrame.is_valid() || bodyFrame.info().width() == 0 || bodyFrame.info().height() == 0)
+    {
+        return;
+    }
+    const float jointScale = bodyFrame.info().width() / 120.f;
+    const auto& bodies = bodyFrame.bodies();
+    for (auto& body : bodies)
+    {
+        printf("Processing frame #%d body %d left hand: %u\n",
+            bodyFrame.frame_index(), body.id(), unsigned(body.hand_poses().left_hand()));
+
+        // Pixels in the body mask with the same value as bodyId are
+        // from the same body.
+        auto bodyId = body.id();
+
+        // bodyStatus is one of:
+        // ASTRA_BODY_STATUS_NOT_TRACKING = 0,
+        // ASTRA_BODY_STATUS_LOST = 1,
+        // ASTRA_BODY_STATUS_TRACKING_STARTED = 2,
+        // ASTRA_BODY_STATUS_TRACKING = 3,
+        auto bodyStatus = body.status();
+
+        if (bodyStatus == astra::BodyStatus::TrackingStarted)
+        {
+            //printf("Body Id: %d Status: Tracking started\n", bodyId);
+        }
+        if (bodyStatus == astra::BodyStatus::Tracking)
+        {
+            //printf("Body Id: %d Status: Tracking\n", bodyId);
+        }
+
+        if (bodyStatus == astra::BodyStatus::TrackingStarted ||
+            bodyStatus == astra::BodyStatus::Tracking)
+        {
+            auto centerOfMass = body.center_of_mass();
+            geometry_msgs::Vector3 bodycenter;
+            bodycenter.x = centerOfMass.x;
+            bodycenter.y = centerOfMass.y;
+            bodycenter.z = centerOfMass.z;
+            g_skel.bodycenter.push_back(bodycenter);
+            auto handPoses = body.hand_poses();
+            // astra_handpose_t is one of:
+            // ASTRA_HANDPOSE_UNKNOWN = 0
+            // ASTRA_HANDPOSE_GRIP = 1
+            astra::HandPose leftHandPose = handPoses.left_hand();
+            astra::HandPose rightHandPose = handPoses.right_hand();
+            g_skel.handpose.push_back((int)leftHandPose);
+            g_skel.handpose.push_back((int)rightHandPose);
+            //printf("Body %d Left hand pose: %d Right hand pose: %d\n",body->id,leftHandPose,rightHandPose);
+
+            const bool jointTrackingEnabled       = body.joints_enabled();
+            const bool handPoseRecognitionEnabled = body.hand_poses_enabled();
+
+            //printf("Body %d CenterOfMass (%f, %f, %f)\n",bodyId,centerOfMass->x, centerOfMass->y, centerOfMass->z);
+            for(auto& joint : body.joints())
+            {
+                if(joint.type() == astra::JointType::Head)
+                    publishTransform(joint, fixed_frame, "head", g_skel);
+                if(joint.type() == astra::JointType::Neck)
+                    publishTransform(joint, fixed_frame, "neck", g_skel);
+                if(joint.type() == astra::JointType::ShoulderSpine)
+                    publishTransform(joint, fixed_frame, "shoulderSpine", g_skel);
+                if(joint.type() == astra::JointType::MidSpine)
+                    publishTransform(joint, fixed_frame, "midSpine", g_skel);
+                if(joint.type() == astra::JointType::BaseSpine)
+                    publishTransform(joint, fixed_frame, "baseSpine", g_skel);
+
+                if(joint.type() == astra::JointType::RightShoulder)
+                    publishTransform(joint, fixed_frame, "right_shoulder", g_skel);
+                if(joint.type() == astra::JointType::RightElbow)
+                    publishTransform(joint, fixed_frame, "right_elbow", g_skel);
+                if(joint.type() == astra::JointType::RightHand)
+                    publishTransform(joint, fixed_frame, "right_hand", g_skel);
+                if(joint.type() == astra::JointType::RightHip)
+                    publishTransform(joint, fixed_frame, "right_hip", g_skel);
+                if(joint.type() == astra::JointType::RightWrist)
+                    publishTransform(joint, fixed_frame, "right_Wrist", g_skel);
+                if(joint.type() == astra::JointType::RightKnee)
+                    publishTransform(joint, fixed_frame, "right_knee", g_skel);
+                if(joint.type() == astra::JointType::RightFoot)
+                    publishTransform(joint, fixed_frame, "right_foot", g_skel);
+
+                if(joint.type() == astra::JointType::LeftShoulder)
+                    publishTransform(joint, fixed_frame, "left_shoulder", g_skel);
+                if(joint.type() == astra::JointType::LeftElbow)
+                    publishTransform(joint, fixed_frame, "left_elbow", g_skel);
+                if(joint.type() == astra::JointType::LeftHand)
+                    publishTransform(joint, fixed_frame, "left_hand", g_skel);
+                if(joint.type() == astra::JointType::LeftHip)
+                    publishTransform(joint, fixed_frame, "left_hip", g_skel);
+                if(joint.type() == astra::JointType::LeftWrist)
+                    publishTransform(joint, fixed_frame, "left_Wrist", g_skel);
+                if(joint.type() == astra::JointType::LeftKnee)
+                    publishTransform(joint, fixed_frame, "left_knee", g_skel);
+                if(joint.type() == astra::JointType::LeftFoot)
+                    publishTransform(joint, fixed_frame, "left_foot", g_skel);
+            }
+            g_skel.user_id = bodyId;
+            g_skel.header.stamp = ros::Time::now();
+            g_skel.header.frame_id = fixed_frame;
+            skeleton_pub_.publish(g_skel);
+        }
+        else if (bodyStatus == astra::BodyStatus::TrackingLost)
+        {
+            printf("Body %u Status: Tracking lost.\n", bodyId);
+        }
+        else // bodyStatus == ASTRA_BODY_STATUS_NOT_TRACKING
+        {
+            printf("Body Id: %d Status: Not Tracking\n", bodyId);
+        }
+        break;
+    }
+  }
+     
+private:
+ros::NodeHandle n;
+ros::Publisher  skeleton_pub_;
+//image_transport::Publisher pub_image;    
+};
+
 class Visualizer : public astra::FrameListener
 {
 public:
     using PointList = std::deque<astra::Vector2i>;
     using PointMap = std::unordered_map<int, PointList>;
 
-    Visualizer()
+    Visualizer(std::string filepath)
     {
-        font_.loadFromFile("Inconsolata.otf");
+        font_.loadFromFile(filepath);
         prev_ = ClockType::now();
+        g_skeleton_tracker = new SkeletonTracker();
     }
 
     static sf::Color get_body_color(std::uint8_t bodyId)
@@ -531,9 +803,10 @@ public:
     virtual void on_frame_ready(astra::StreamReader& reader,
                                 astra::Frame& frame) override
     {
-        processDepth(frame);
+        //processDepth(frame);
         processColorRGB(frame);
         processBodies(frame);
+        g_skeleton_tracker->ros_process_Body(frame);
         process_hand_frame(frame);
         
         //  check_fps();
@@ -776,6 +1049,9 @@ private:
     PointMap pointMap_;
 
     int maxTraceLength_{15};
+public:
+    std::string word_filepath;
+    SkeletonTracker *g_skeleton_tracker;
 };
 
 astra::DepthStream configure_depth(astra::StreamReader& reader)
@@ -849,6 +1125,17 @@ astra::InfraredStream configure_ir(astra::StreamReader& reader, bool useRGB)
 
 int main(int argc, char** argv)
 {
+    
+    ros::init(argc, argv, "skeleton_tracker",ros::init_options::NoSigintHandler);
+    ros::NodeHandle np("~");
+
+    string filepath;
+    bool is_a_recording;
+    np.getParam("load_filepath", filepath); 
+    np.param<bool>("load_recording", is_a_recording, false);      
+    string word_filepath;
+    np.getParam("word_filepath", word_filepath);
+
     astra::initialize();
     
     if (argc == 2)
@@ -866,7 +1153,7 @@ int main(int argc, char** argv)
         orbbec_body_tracking_set_license(licenseString);
     }
 
-    sf::RenderWindow window(sf::VideoMode(1280, 960), "Simple Body Viewer");
+    sf::RenderWindow window(sf::VideoMode(640, 480), "Simple Body Viewer");
 
 #ifdef _WIN32
     auto fullscreenStyle = sf::Style::None;
@@ -875,13 +1162,14 @@ int main(int argc, char** argv)
 #endif
 
     const sf::VideoMode fullScreenMode = sf::VideoMode::getFullscreenModes()[0];
-    const sf::VideoMode windowedMode(1280, 960);
+    const sf::VideoMode windowedMode(640, 480);
     bool isFullScreen = false;
 
     astra::StreamSet sensor;
     astra::StreamReader reader = sensor.create_reader();
 
-    Visualizer listener;
+    Visualizer listener(word_filepath);
+    listener.g_skeleton_tracker->init(np);
 
     auto depthStream = configure_depth(reader);
     depthStream.start();

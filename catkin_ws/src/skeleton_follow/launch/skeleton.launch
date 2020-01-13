@@ -1,0 +1,21 @@
+<launch>
+  <arg name="fixed_frame" default="openni_depth_frame" />
+
+  <arg name="debug" default="False" />
+  <arg name="launch_prefix" default="xterm -e gdb --args" />
+    
+  <group if="$(arg debug)">
+    <node launch-prefix="$(arg launch_prefix)" pkg="skeleton_follow" name="skeleton_follow" type="skeleton_tracker" output="screen"	>
+      <param name="fixed_frame" value="$(arg fixed_frame)" />
+      <param name="load_filepath" value="$(find skeleton_follow)/params/SamplesConfig.xml" />
+      <param name="word_filepath" value="$(find skeleton_follow)/params/Inconsolata.otf" />
+    </node>
+  </group>
+  <group unless="$(arg debug)">
+    <node name="skeleton_follow" pkg="skeleton_follow" type="skeleton_tracker" output="screen">
+      <param name="fixed_frame" value="$(arg fixed_frame)" />
+      <param name="load_filepath" value="$(find skeleton_follow)/params/SamplesConfig.xml" />
+      <param name="word_filepath" value="$(find skeleton_follow)/params/Inconsolata.otf" />
+    </node>
+  </group>
+</launch>
