@@ -84,18 +84,17 @@ class SkeletonMarkers():
         right_hand_pose = msg.handpose[1]
         control_flag = 0
         if left_hand_pose == 1 and right_hand_pose == 1:
-            print "left and right ok"
+            #print "left and right ok"
             control_flag = 1
         elif right_hand_pose == 1:
-            print "right_hand ok"
+            control_flag = 0
+            #print "right_hand ok"
         elif left_hand_pose == 1:
-            print "left hand ok"
+            control_flag = 0
+            #print "left hand ok"
         else:
-            #pyautogui.keyUp('up')
-            #pyautogui.keyUp('down')
-            #pyautogui.keyUp('left')
-            #pyautogui.keyUp('right')
-            print "hand not get"
+            control_flag = 0
+            #print "hand not get"
 
         for joint in msg.name:      
             position = Point()
@@ -104,8 +103,8 @@ class SkeletonMarkers():
             if joint == "head":
                 self.head_position = position
                 rpy = msg.rpy[msg.name.index(joint)]
-                print "head:"
-                print rpy
+                #print "head:"
+                #print rpy
                 if control_flag == 1:
                     if rpy.x > 0.3:
                         if self.button_down_flag == 1:
@@ -152,25 +151,29 @@ class SkeletonMarkers():
                             self.button_left_flag = 0
             if control_flag == 0:    
                 if joint == "left_hand":
-                    print "left_hand:"
+                    #print "left_hand:"
                     #print position
                     distance =  self.head_position.z - position.z
-                    print distance
+                    #print distance
                     if distance > 500 and left_hand_pose == 1:
-                        pyautogui.press('esc')
-                        self.lase_press_esc_time = rospy.Time.now()
+                        if rospy.Time.now().to_sec() - self.lase_press_esc_time.to_sec() > 3:
+                            pyautogui.press('esc')
+                            print "press esc"
+                            self.lase_press_esc_time = rospy.Time.now()
                     #print image_2d
                 if joint == "right_hand":
-                    print "right_hand:"
+                    #print "right_hand:"
                     distance =  self.head_position.z - position.z
-                    print distance
+                    #print distance
                     if distance > 500 and right_hand_pose == 1:
-                        pyautogui.press('enter')
-                        self.lase_press_enter_time = rospy.Time.now()
+                        if rospy.Time.now().to_sec() - self.lase_press_enter_time.to_sec() > 3:
+                            pyautogui.press('enter')
+                            print "press enter"
+                            self.lase_press_enter_time = rospy.Time.now()
                     #print image_2d
 
     def skeleton_handler(self, msg):
-        #self.supertux2_control(self,msg)
+        self.supertux2_control(msg)
         self.markers.header.frame_id = msg.header.frame_id
         self.markers.header.stamp = rospy.Time.now()
         self.markers.points = list()

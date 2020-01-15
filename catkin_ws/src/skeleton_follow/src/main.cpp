@@ -217,8 +217,8 @@ public:
     const auto& bodies = bodyFrame.bodies();
     for (auto& body : bodies)
     {
-        printf("Processing frame #%d body %d left hand: %u\n",
-            bodyFrame.frame_index(), body.id(), unsigned(body.hand_poses().left_hand()));
+        //printf("Processing frame #%d body %d left hand: %u\n",
+        //    bodyFrame.frame_index(), body.id(), unsigned(body.hand_poses().left_hand()));
 
         // Pixels in the body mask with the same value as bodyId are
         // from the same body.
@@ -557,23 +557,24 @@ public:
 
         for (auto& body : bodies)
         {
-            printf("Processing frame #%d body %d left hand: %u\n",
-                bodyFrame.frame_index(), body.id(), unsigned(body.hand_poses().left_hand()));
+            //printf("Processing frame #%d body %d left hand: %u\n",
+            //    bodyFrame.frame_index(), body.id(), unsigned(body.hand_poses().left_hand()));
             for(auto& joint : body.joints())
             {
                 jointPositions_.push_back(joint.depth_position());
             }
 
             update_body(body, jointScale);
+            break;
         }
 
         const auto& floor = bodyFrame.floor_info(); //floor
         if (floor.floor_detected())
         {
             const auto& p = floor.floor_plane();
-            std::cout << "Floor plane: ["
-                << p.a() << ", " << p.b() << ", " << p.c() << ", " << p.d()
-                << "]" << std::endl;
+            //std::cout << "Floor plane: ["
+             //   << p.a() << ", " << p.b() << ", " << p.c() << ", " << p.d()
+             //   << "]" << std::endl;
 
         }
 
@@ -669,7 +670,7 @@ public:
                 (type == astra::JointType::RightHand &&  astra::HandPose::Grip==body.hand_poses().right_hand()))
             {
                 radius *= 1.5f;
-                circleShadowColor = sf::Color(255, 255, 255, 255);
+                circleShadowColor = sf::Color(255, 0, 0, 255);
                 color = sf::Color(0x00, 0xAA, 0xFF, 0xFF);
             }
 
@@ -808,7 +809,6 @@ public:
         processBodies(frame);
         g_skeleton_tracker->ros_process_Body(frame);
         process_hand_frame(frame);
-        
         //  check_fps();
     }
 
@@ -893,11 +893,11 @@ public:
             << worldPosition.x << ", "
             << worldPosition.y << ", "
             << worldPosition.z;
-        std::cout << std::fixed
-            << std::setprecision(0)
-            << worldPosition.x << ", "
-            << worldPosition.y << ", "
-            << worldPosition.z << std::endl;
+        // std::cout << std::fixed
+        //     << std::setprecision(0)
+        //     << worldPosition.x << ", "
+        //     << worldPosition.y << ", "
+        //     << worldPosition.z << std::endl;
         sf::Text label(str.str(), font_);
         const int characterSize = 20;
         label.setCharacterSize(characterSize);
@@ -1230,7 +1230,7 @@ int main(int argc, char** argv)
                            newMode.width(), newMode.height(), newMode.fps());
                     break;
                 }
-                case sf::Keyboard::Escape:
+                case sf::Keyboard::Q:
                     window.close();
                     break;
                 case sf::Keyboard::F:
