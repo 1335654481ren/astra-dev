@@ -41,6 +41,11 @@
 #include <kdl/frames.hpp>
 #include <string>
 
+
+#include <python2.7/Python.h>
+#include <iostream>
+#include <string>
+
 //#include <opencv2/highgui/highgui.hpp>
 //#include <opencv2/opencv.hpp>
 //#include <sensor_msgs/image_encodings.h>
@@ -56,6 +61,207 @@ extern "C" {               // 告诉编译器下列代码要以C链接约定的�
 
 using namespace std;
 
+enum BTN_STATUS{
+    PRESS,
+    DOWN,
+    UP
+};
+
+struct button_t
+{
+    BTN_STATUS last_state;
+    int count;
+    double last_change_time;
+};
+
+class window_control
+{
+public:
+    window_control(){
+        xdo = xdo_new(NULL);
+        mouse_control_flag = 0;
+        Py_Initialize();
+        //导入环境变量
+        PyRun_SimpleString("import sys");
+        PyRun_SimpleString("import pyautogui");
+        //python脚本路径
+        PyRun_SimpleString("sys.path.append('./')");//放在cpp的同一路径下
+
+        pFunc= PyObject_GetAttrString(pModule, "size");
+        PyObject *pyValue = PyObject_CallObject(pFunc,NULL); //调用函数返回结果
+        PyArg_ParseTuple(pyValue,"i|i",&screenWidth,&screenHeight);
+        printf("window size: %d ,%d\n", screenWidth,screenHeight);
+        Py_DECREF(pFunc);
+        scaleX = screenWidth / 640;
+        scaleY = screenHeight / 480;
+        xdo_get_mouse_location2(xdo, &current_pos_x, &current_pos_y, &screen_num, &window);
+        for(int i = 0; i < 10; i++)
+        {
+            xdo_move_mouse_relative(xdo, 1, 1);
+        }
+    }
+
+    void process_body_data(astra::Frame& frame){
+        astra::BodyFrame bodyFrame = frame.get<astra::BodyFrame>(); 
+        if (!bodyFrame.is_valid() || bodyFrame.info().width() == 0 || bodyFrame.info().height() == 0)
+        {
+            return;
+        }
+        const float jointScale = bodyFrame.info().width() / 120.f;
+        const auto& bodies = bodyFrame.bodies();
+        for (auto& body : bodies)
+        {
+            //printf("Processing frame #%d body %d left hand: %u\n",
+            //    bodyFrame.frame_index(), body.id(), unsigned(body.hand_poses().left_hand()));
+            // Pixels in the body mask with the same value as bodyId are
+            // from the same body.
+            auto bodyId = body.id();
+
+            // bodyStatus is one of:
+            // ASTRA_BODY_STATUS_NOT_TRACKING = 0,
+            // ASTRA_BODY_STATUS_LOST = 1,
+            // ASTRA_BODY_STATUS_TRACKING_STARTED = 2,
+            // ASTRA_BODY_STATUS_TRACKING = 3,
+            auto bodyStatus = body.status();
+
+            if (bodyStatus == astra::BodyStatus::TrackingStarted)
+            {
+                //printf("Body Id: %d Status: Tracking started\n", bodyId);
+            }
+            if (bodyStatus == astra::BodyStatus::Tracking)
+            {
+                //printf("Body Id: %d Status: Tracking\n", bodyId);
+            }
+
+            if (bodyStatus == astra::BodyStatus::TrackingStarted ||
+                bodyStatus == astra::BodyStatus::Tracking)
+            {
+                auto centerOfMass = body.center_of_mass();
+                geometry_msgs::Vector3 bodycenter;
+                bodycenter.x = centerOfMass.x;
+                bodycenter.y = centerOfMass.y;
+                bodycenter.z = centerOfMass.z;
+                auto handPoses = body.hand_poses();
+                // astra_handpose_t is one of:
+                // ASTRA_HANDPOSE_UNKNOWN = 0
+                // ASTRA_HANDPOSE_GRIP = 1
+                astra::HandPose leftHandPose = handPoses.left_hand();
+                astra::HandPose rightHandPose = handPoses.right_hand();
+
+                //printf("Body %d Left hand pose: %d Right hand pose: %d\n",body->id,leftHandPose,rightHandPose);
+
+                const bool jointTrackingEnabled       = body.joints_enabled();
+                const bool handPoseRecognitionEnabled = body.hand_poses_enabled();
+
+                //printf("Body %d CenterOfMass (%f, %f, %f)\n",bodyId,centerOfMass->x, centerOfMass->y, centerOfMass->z);
+                for(auto& joint : body.joints())
+                {
+                    if(joint.type() == astra::JointType::Head)
+                        ;//publishTransform(joint, fixed_frame, "head", g_skel);
+                    if(joint.type() == astra::JointType::LeftHand){
+                        auto jointStatus = joint.status();
+                        auto worldPos = joint.world_position();
+                        auto depthPos = joint.depth_position();
+                        if(jointStatus == astra::JointStatus::Tracked ){
+                            int diffx = depthPos.x - last_left_hand_pos_x;
+                            int diffy = depthPos.y - last_left_hand_pos_y;
+                            printf("x : %d - %d = %d = %d \n",depthPos.x,last_left_hand_pos_x,depthPos.x - last_left_hand_pos_x, (depthPos.x - last_left_hand_pos_x)/scaleX);
+                            printf("y : %d - %d = %d = %d \n",depthPos.y,last_left_hand_pos_y,depthPos.y - last_left_hand_pos_y, (depthPos.y - last_left_hand_pos_y)/scaleY);
+                            move_mouse(int(diffx/scaleX), int(diffy/scaleY));
+                         }    
+                    }
+                    if(joint.type() == astra::JointType::RightHand)
+                        ;//publishTransform(joint, fixed_frame, "right_hand", g_skel);
+
+                    if(joint.type() == astra::JointType::Neck)
+                        ;//publishTransform(joint, fixed_frame, "neck", g_skel);
+                    if(joint.type() == astra::JointType::ShoulderSpine)
+                        ;//publishTransform(joint, fixed_frame, "shoulderSpine", g_skel);
+                    if(joint.type() == astra::JointType::MidSpine)
+                        ;//publishTransform(joint, fixed_frame, "midSpine", g_skel);
+                    if(joint.type() == astra::JointType::BaseSpine)
+                        ;//publishTransform(joint, fixed_frame, "baseSpine", g_skel);
+
+                    if(joint.type() == astra::JointType::RightShoulder)
+                        ;//publishTransform(joint, fixed_frame, "right_shoulder", g_skel);
+                    if(joint.type() == astra::JointType::RightElbow)
+                        ;//publishTransform(joint, fixed_frame, "right_elbow", g_skel)
+                    if(joint.type() == astra::JointType::RightHip)
+                        ;//publishTransform(joint, fixed_frame, "right_hip", g_skel);
+                    if(joint.type() == astra::JointType::RightWrist)
+                        ;//publishTransform(joint, fixed_frame, "right_Wrist", g_skel);
+                    if(joint.type() == astra::JointType::RightKnee)
+                        ;//publishTransform(joint, fixed_frame, "right_knee", g_skel);
+                    if(joint.type() == astra::JointType::RightFoot)
+                        ;//publishTransform(joint, fixed_frame, "right_foot", g_skel);
+
+                    if(joint.type() == astra::JointType::LeftShoulder)
+                        ;//publishTransform(joint, fixed_frame, "left_shoulder", g_skel);
+                    if(joint.type() == astra::JointType::LeftElbow)
+                        ;//publishTransform(joint, fixed_frame, "left_elbow", g_skel);
+                    if(joint.type() == astra::JointType::LeftHip)
+                        ;//publishTransform(joint, fixed_frame, "left_hip", g_skel);
+                    if(joint.type() == astra::JointType::LeftWrist)
+                        ;//publishTransform(joint, fixed_frame, "left_Wrist", g_skel);
+                    if(joint.type() == astra::JointType::LeftKnee)
+                        ;//publishTransform(joint, fixed_frame, "left_knee", g_skel);
+                    if(joint.type() == astra::JointType::LeftFoot)
+                        ;//publishTransform(joint, fixed_frame, "left_foot", g_skel);
+                }
+            }
+            else if (bodyStatus == astra::BodyStatus::TrackingLost)
+            {
+                printf("Body %u Status: Tracking lost.\n", bodyId);
+            }
+            else // bodyStatus == ASTRA_BODY_STATUS_NOT_TRACKING
+            {
+                printf("Body Id: %d Status: Not Tracking\n", bodyId);
+            }
+            break;
+        }
+    }
+
+    void get_focused_window(){
+        xdo_get_focused_window(xdo, &window);
+        printf("focuse window id = %d\n", window);
+        xdo_get_active_window(xdo, &window);
+        printf("active window id = %d\n", window);
+        xdo_get_window_name(xdo, window, &name, &name_len, &name_type);
+        printf("window name:%s,len:%d,type:%d\n",name,name_len,name_type);
+        xdo_get_window_size(xdo, window, &width, &height);
+        printf("window_size:(width:%d , height:%d )\n", width,height);
+        xdo_get_window_location(xdo, window, &position_x, &position_y, &screen);
+        screen_num = XScreenNumberOfScreen(screen);
+        printf("window position:(x:%d ,y:%d ,screen_num:%d)\n",position_x,position_y,screen_num);
+        pid = xdo_get_pid_window(xdo, window);
+        printf("window pid:%d\n",pid);        
+    }
+
+    void move_mouse(int x, int y){
+        xdo_move_mouse_relative(xdo, x, y);
+    }
+private:
+    int current_pos_x,current_pos_y;
+    int screenWidth,screenHeight;
+    int last_left_hand_pos_x,last_left_hand_pos_y;
+    float scaleX,scaleY;
+    xdo_t *xdo;
+    long unsigned int window;
+    unsigned char *name;
+    int name_len;
+    int name_type;
+    int height,width;
+    int position_x,position_y;
+    Screen *screen;
+    int screen_num;
+    int pid;
+    int mouse_control_flag;
+    //python
+    PyObject * pModule = NULL;
+    PyObject * pFunc = NULL;
+    PyObject * pClass = NULL;
+    PyObject * pInstance = NULL;
+};
 
 class sfLine : public sf::Drawable
 {
@@ -202,6 +408,7 @@ public:
     transform.setRotation(tf::Quaternion(qx, qy, qz, qw));
     br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), frame_id, child_frame_id));
   }
+
   void ros_process_Body(astra::Frame& frame)
   {
 
@@ -340,6 +547,7 @@ public:
         font_.loadFromFile(filepath);
         prev_ = ClockType::now();
         g_skeleton_tracker = new SkeletonTracker();
+        g_window = new window_control();
     }
 
     static sf::Color get_body_color(std::uint8_t bodyId)
@@ -1052,6 +1260,7 @@ private:
 public:
     std::string word_filepath;
     SkeletonTracker *g_skeleton_tracker;
+    window_control *g_window;
 };
 
 astra::DepthStream configure_depth(astra::StreamReader& reader)

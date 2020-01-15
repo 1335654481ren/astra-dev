@@ -52,6 +52,7 @@ link_directories(
   ${GLUT_LIBRARIES_DIRS}
   ${OPENGL_LIBRARIES_DIRS}
   #${OpenCV_LIBRARIES_DIRS}
+  /usr/lib/python2.7
 )
 
 include_directories(include 
@@ -62,13 +63,13 @@ include_directories(include
 	${orocos_kdl_INCLUDE_DIRS}
 	${OPENGL_INCLUDE_DIR}
 	#${OpenCV_INCLUDE_DIR}
-	./common/
+	/usr/include/python2.7
 )
 
 add_executable(skeleton_tracker src/main.cpp)
 
-set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
-#set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
+#set(ASTRA_SDK_LIB "/home/renxl/work/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
+set(ASTRA_SDK_LIB "/home/renxl/work/samba-share/astra/astra-dev/catkin_ws/src/skeleton_follow/lib")
 
 target_link_libraries(skeleton_tracker
 	${catkin_LIBRARIES}
@@ -83,7 +84,10 @@ target_link_libraries(skeleton_tracker
 	sfml-graphics
 	sfml-system
 	sfml-window
+	python2.7
 	pthread
+	X11
+	xdo
 	dl
 )
 
