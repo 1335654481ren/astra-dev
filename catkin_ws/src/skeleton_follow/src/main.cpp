@@ -86,18 +86,23 @@ public:
         PyRun_SimpleString("import pyautogui");
         //python脚本路径
         PyRun_SimpleString("sys.path.append('./')");//放在cpp的同一路径下
-
+        // PyImport_ImportModule????python???????python????????//??????????????????????????.pyc?????????//???.pyc????????????????????????
+        pModule = PyImport_ImportModule("pyautogui");
         pFunc= PyObject_GetAttrString(pModule, "size");
         PyObject *pyValue = PyObject_CallObject(pFunc,NULL); //调用函数返回结果
         PyArg_ParseTuple(pyValue,"i|i",&screenWidth,&screenHeight);
         printf("window size: %d ,%d\n", screenWidth,screenHeight);
         Py_DECREF(pFunc);
-        scaleX = screenWidth / 640;
-        scaleY = screenHeight / 480;
+        scaleX = screenWidth / 200.0;
+        scaleY = screenHeight / 160.0;
+        printf("scaleX:%f, scaleY:%f",scaleX,scaleY);
+        last_left_hand_pos_x = last_left_hand_pos_y = 0.0;
         xdo_get_mouse_location2(xdo, &current_pos_x, &current_pos_y, &screen_num, &window);
+        get_focused_window();
         for(int i = 0; i < 10; i++)
         {
-            xdo_move_mouse_relative(xdo, 1, 1);
+            xdo_move_mouse(xdo, screenWidth/2, screenHeight/2, screen_num);
+            //xdo_move_mouse_relative(xdo, 1, 1);
         }
     }
 
@@ -136,11 +141,8 @@ public:
             if (bodyStatus == astra::BodyStatus::TrackingStarted ||
                 bodyStatus == astra::BodyStatus::Tracking)
             {
-                auto centerOfMass = body.center_of_mass();
-                geometry_msgs::Vector3 bodycenter;
-                bodycenter.x = centerOfMass.x;
-                bodycenter.y = centerOfMass.y;
-                bodycenter.z = centerOfMass.z;
+                bodycenter = body.center_of_mass();
+      
                 auto handPoses = body.hand_poses();
                 // astra_handpose_t is one of:
                 // ASTRA_HANDPOSE_UNKNOWN = 0
@@ -156,22 +158,49 @@ public:
                 //printf("Body %d CenterOfMass (%f, %f, %f)\n",bodyId,centerOfMass->x, centerOfMass->y, centerOfMass->z);
                 for(auto& joint : body.joints())
                 {
+                    auto jointStatus = joint.status();
+                    auto worldPos = joint.world_position();
+                    auto depthPos = joint.depth_position();
+                    if(jointStatus != astra::JointStatus::Tracked )
+                        continue;
                     if(joint.type() == astra::JointType::Head)
                         ;//publishTransform(joint, fixed_frame, "head", g_skel);
                     if(joint.type() == astra::JointType::LeftHand){
-                        auto jointStatus = joint.status();
-                        auto worldPos = joint.world_position();
-                        auto depthPos = joint.depth_position();
-                        if(jointStatus == astra::JointStatus::Tracked ){
-                            int diffx = depthPos.x - last_left_hand_pos_x;
-                            int diffy = depthPos.y - last_left_hand_pos_y;
-                            printf("x : %d - %d = %d = %d \n",depthPos.x,last_left_hand_pos_x,depthPos.x - last_left_hand_pos_x, (depthPos.x - last_left_hand_pos_x)/scaleX);
-                            printf("y : %d - %d = %d = %d \n",depthPos.y,last_left_hand_pos_y,depthPos.y - last_left_hand_pos_y, (depthPos.y - last_left_hand_pos_y)/scaleY);
-                            move_mouse(int(diffx/scaleX), int(diffy/scaleY));
-                         }    
+                        //printf("hand: x = %f ,y =%f \n", depthPos.x,depthPos.y);
+                        float diffx = depthPos.x - last_left_hand_pos_x;
+                        float diffy = depthPos.y - last_left_hand_pos_y;
+                        //printf("x : %.3f - %.3f = %.3f = %.3f \n",depthPos.x,last_left_hand_pos_x,depthPos.x - last_left_hand_pos_x, (depthPos.x - last_left_hand_pos_x)/scaleX);
+                        //printf("y : %.3f - %.3f = %.3f = %.3f \n",depthPos.y,last_left_hand_pos_y,depthPos.y - last_left_hand_pos_y, (depthPos.y - last_left_hand_pos_y)/scaleY);
+                        last_left_hand_pos_x = depthPos.x;
+                        last_left_hand_pos_y = depthPos.y;
+                        float diff = bodycenter.z - worldPos.z;
+                        if(  diff > 150 && diff < 350){
+                            printf("move: %f\n",worldPos.z - bodycenter.z);
+                            move_mouse(int(diffx*scaleX), int(diffy*scaleY));   
+                        }else if( diff > 350){
+                            if(astra::HandPose::Grip == leftHandPose && ros::Time::now().toSec() - left_btn.last_change_time > 3 ){
+                                printf("left click : %f\n",diff);
+                                //xdo_mouse_down(xdo, window, 1);
+                                //usleep(30*1000);
+                                //xdo_mouse_up(xdo, window, 1);
+                                xdo_click_window_multiple(xdo, window, 1, 1, 100);
+                                left_btn.last_change_time = ros::Time::now().toSec();
+                            }
+                        }
                     }
-                    if(joint.type() == astra::JointType::RightHand)
-                        ;//publishTransform(joint, fixed_frame, "right_hand", g_skel);
+                    if(joint.type() == astra::JointType::RightHand){
+                        float diff = bodycenter.z - worldPos.z;
+                        if( diff > 350){
+                            if(astra::HandPose::Grip == rightHandPose && ros::Time::now().toSec() - right_btn.last_change_time > 3 ){
+                                printf("right click : %f\n",diff);
+                                //xdo_mouse_down(xdo, window, 3);
+                                //usleep(30*1000);
+                                //xdo_mouse_up(xdo, window, 3);
+                                xdo_click_window_multiple(xdo, window, 3, 1, 100);
+                                right_btn.last_change_time = ros::Time::now().toSec();
+                            }
+                        }
+                    }
 
                     if(joint.type() == astra::JointType::Neck)
                         ;//publishTransform(joint, fixed_frame, "neck", g_skel);
@@ -241,9 +270,12 @@ public:
         xdo_move_mouse_relative(xdo, x, y);
     }
 private:
+    astra::Vector3f bodycenter;
+    geometry_msgs::Vector3 head_rpy;
+
     int current_pos_x,current_pos_y;
     int screenWidth,screenHeight;
-    int last_left_hand_pos_x,last_left_hand_pos_y;
+    float last_left_hand_pos_x,last_left_hand_pos_y;
     float scaleX,scaleY;
     xdo_t *xdo;
     long unsigned int window;
@@ -261,6 +293,10 @@ private:
     PyObject * pFunc = NULL;
     PyObject * pClass = NULL;
     PyObject * pInstance = NULL;
+    button_t right_btn;
+    button_t left_btn;
+    button_t enter_btn;
+    button_t esc_btn;
 };
 
 class sfLine : public sf::Drawable
@@ -1016,6 +1052,7 @@ public:
         processColorRGB(frame);
         processBodies(frame);
         g_skeleton_tracker->ros_process_Body(frame);
+        g_window->process_body_data(frame);
         process_hand_frame(frame);
         //  check_fps();
     }
